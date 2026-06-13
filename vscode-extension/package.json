@@ -1,0 +1,40 @@
+{
+  "name": "sponsorbucks-vscode",
+  "displayName": "SponsorBucks",
+  "description": "Privacy-first sponsored wait-state line for AI agent workflows.",
+  "version": "0.1.0",
+  "publisher": "sponsorbucks",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onCommand:sponsorbucks.startDemo",
+    "onCommand:sponsorbucks.stopDemo"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "sponsorbucks.startDemo",
+        "title": "SponsorBucks: Start Demo Placement"
+      },
+      {
+        "command": "sponsorbucks.stopDemo",
+        "title": "SponsorBucks: Stop Demo Placement"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.90.0",
+    "typescript": "^5.4.0"
+  }
+}

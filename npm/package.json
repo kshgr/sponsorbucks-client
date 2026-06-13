@@ -1,0 +1,14 @@
+{
+  "name": "sponsorbucks",
+  "version": "1.0.0-preview.1",
+  "description": "SponsorBucks CLI installer for the open-source AI-agent sponsorship client.",
+  "bin": {
+    "sponsorbucks": "bin/sponsorbucks.js"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kshgr/sponsorbucks-client.git"
+  },
+  "keywords": ["ai", "agents", "cli", "codex", "claude", "terminal", "sponsorship"]
+}

@@ -1,0 +1,12 @@
+# local builds
+sponsorbucks
+sponsorbucks.exe
+dist/
+
+# local config/logs
+.sponsorbucks/
+
+# editor/os
+.DS_Store
+.vscode/
+.idea/

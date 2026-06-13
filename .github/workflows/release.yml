@@ -1,0 +1,42 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23.x"
+      - name: Test
+        run: go test ./...
+      - name: Build release assets
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          BUILD_ID="${GITHUB_SHA}"
+          mkdir -p dist
+          GOOS=windows GOARCH=amd64 VERSION="$VERSION" BUILD_ID="$BUILD_ID" BUILD_CHANNEL=release sh ./scripts/build-release.sh
+          GOOS=linux GOARCH=amd64 VERSION="$VERSION" BUILD_ID="$BUILD_ID" BUILD_CHANNEL=release sh ./scripts/build-release.sh
+          GOOS=darwin GOARCH=amd64 VERSION="$VERSION" BUILD_ID="$BUILD_ID" BUILD_CHANNEL=release sh ./scripts/build-release.sh
+          GOOS=darwin GOARCH=arm64 VERSION="$VERSION" BUILD_ID="$BUILD_ID" BUILD_CHANNEL=release sh ./scripts/build-release.sh
+          cd dist
+          sha256sum sponsorbucks-* > checksums.txt
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          prerelease: true
+          files: |
+            dist/sponsorbucks-windows-amd64.exe
+            dist/sponsorbucks-linux-amd64
+            dist/sponsorbucks-darwin-amd64
+            dist/sponsorbucks-darwin-arm64
+            dist/checksums.txt
