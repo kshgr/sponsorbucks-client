@@ -19,10 +19,17 @@ type Client struct {
 }
 
 func New(baseURL, deviceToken string) *Client {
+	return NewWithHTTPClient(baseURL, deviceToken, &http.Client{Timeout: 15 * time.Second})
+}
+
+func NewWithHTTPClient(baseURL, deviceToken string, httpClient *http.Client) *Client {
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: 15 * time.Second}
+	}
 	return &Client{
 		baseURL:     strings.TrimRight(baseURL, "/"),
 		deviceToken: deviceToken,
-		httpClient:  &http.Client{Timeout: 15 * time.Second},
+		httpClient:  httpClient,
 	}
 }
 
@@ -71,6 +78,7 @@ type AdResponse struct {
 	CreativeID      string `json:"creative_id"`
 	Line            string `json:"line"`
 	DestinationURL  string `json:"destination_url"`
+	TrackingURL     string `json:"tracking_url,omitempty"`
 	DisplayMS       int    `json:"display_ms"`
 	RotationAllowed bool   `json:"rotation_allowed"`
 	NoAd            bool   `json:"no_ad"`
@@ -103,6 +111,36 @@ func (c *Client) NextAd(deviceID, surface string, lastCreativeID string) (AdResp
 	var out AdResponse
 	err := c.postJSON("/ads-next", nextAdRequest{DeviceID: deviceID, Surface: surface, LastCreativeID: lastCreativeID}, &out, nil)
 	return out, err
+}
+
+type ClickEvent struct {
+	EventType     string `json:"event_type"`
+	SessionID     string `json:"session_id"`
+	DeviceID      string `json:"device_id"`
+	CampaignID    string `json:"campaign_id"`
+	CreativeID    string `json:"creative_id"`
+	CreativeHash  string `json:"creative_hash"`
+	Surface       string `json:"surface"`
+	ClickedAt     string `json:"clicked_at"`
+	ClientVersion string `json:"client_version"`
+	BuildID       string `json:"build_id"`
+	BuildChannel  string `json:"build_channel"`
+}
+
+func (c *Client) PathReachable(path string) error {
+	httpReq, err := http.NewRequest(http.MethodGet, c.baseURL+path, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return fmt.Errorf("%s not reachable: %s", path, resp.Status)
+	}
+	return nil
 }
 
 func (c *Client) PostSigned(path string, body []byte, deviceID, signature, timestamp string) error {

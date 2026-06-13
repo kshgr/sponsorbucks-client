@@ -12,11 +12,16 @@ This technical preview is intentionally narrow:
 - No auto-update in v0.
 - Events are signed locally before upload.
 - Source and dev builds are limited until official signing is active.
+- Live campaigns are not guaranteed in every session.
+- Demo impressions are never payable.
+- Clicks are tracked only through `sponsorbucks open` and the SponsorBucks tracking redirect.
+- No silent auto-update.
+- True PTY sticky mode is still in development.
 
 
 ## Current launch status
 
-This is a technical preview for waitlist launch. Demo sessions work locally. Paid campaigns and payouts are not live yet.
+This is a technical preview for waitlist launch. Demo sessions work locally. Live campaigns may be unavailable, and paid campaigns and payouts are not live yet.
 
 Official binaries are distributed through GitHub Releases from `kshgr/sponsorbucks-client`. Source/dev builds are marked `build_channel=dev`; release builds are created by CI with signed/checksummed assets.
 
@@ -79,6 +84,7 @@ sponsorbucks run --surface gemini-cli -- gemini
 - Starts a local daemon for preview integrations.
 - Wraps agent sessions and emits signed heartbeat events.
 - Shows a sponsored text line in terminals that support it.
+- Caches the currently visible ad locally so `sponsorbucks open` can reuse it.
 
 ## Privacy guarantee
 
@@ -103,11 +109,12 @@ AI agent command
    |
 sponsorbucks run
    |
-local client
+   local client
    |-- fetch eligible text+URL ad
    |-- show sponsored line
+   |-- cache current visible ad
    |-- sign event payloads
-   |-- send heartbeat
+   |-- send heartbeat/click events
    |
 SponsorBucks backend
 ```
@@ -120,4 +127,3 @@ See:
 - [EVENT_SCHEMA.md](./EVENT_SCHEMA.md)
 - [RELEASE_SIGNING.md](./RELEASE_SIGNING.md)
 - [THREAT_MODEL.md](./THREAT_MODEL.md)
-

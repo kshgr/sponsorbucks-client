@@ -92,12 +92,14 @@ Response:
   "creative_id": "creative_...",
   "line": "Sponsored - Deploy APIs faster",
   "destination_url": "https://example.com",
+  "tracking_url": "https://sponsorbucks.xyz/click/...",
   "display_ms": 5000,
   "rotation_allowed": true
 }
 ```
 
 The backend must enforce a 60-character maximum for `line`.
+`destination_url` should be the SponsorBucks tracking redirect or an equivalent redirect target.
 
 ### POST /events-session-start
 
@@ -113,7 +115,8 @@ Signed JSON body:
   "client_version": "0.3.0",
   "build_id": "dev",
   "build_channel": "dev",
-  "human_initiated": true
+  "human_initiated": true,
+  "no_ad": false
 }
 ```
 
@@ -137,6 +140,26 @@ Signed JSON body:
   "foreground_supported_surface": true,
   "placement_visible": true,
   "created_at": "2026-06-13T12:00:05Z",
+  "client_version": "0.3.0",
+  "build_id": "dev",
+  "build_channel": "dev"
+}
+```
+
+### POST /events-click
+
+Signed JSON body:
+
+```json
+{
+  "event_type": "click",
+  "session_id": "sess_...",
+  "device_id": "dev_...",
+  "campaign_id": "camp_...",
+  "creative_id": "creative_...",
+  "creative_hash": "sha256-of-visible-line",
+  "surface": "codex",
+  "clicked_at": "2026-06-13T12:00:05Z",
   "client_version": "0.3.0",
   "build_id": "dev",
   "build_channel": "dev"
@@ -179,3 +202,4 @@ Backend rejects:
 - disabled device
 - stale timestamp
 - impossible concurrent sessions
+- invalid click/session correlation

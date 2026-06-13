@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"sponsorbucks-client/internal/api"
+	"sponsorbucks-client/internal/buildinfo"
 	"sponsorbucks-client/internal/daemon"
 	"sponsorbucks-client/internal/localconfig"
 	"sponsorbucks-client/internal/logs"
@@ -237,6 +238,7 @@ func Doctor(args []string) {
 		cfg = localconfig.Config{}
 	}
 	report("device linked", cfg.DeviceID != "" && cfg.DeviceToken != "" && cfg.DevicePublicKey != "", cfg.DeviceID)
+	report("build type", true, buildinfo.BuildChannel)
 
 	if cfg.APIBaseURL == "" {
 		report("api reachable", false, "api base url not set")
@@ -244,12 +246,21 @@ func Doctor(args []string) {
 		client := api.New(cfg.APIBaseURL, cfg.DeviceToken)
 		err = client.Health()
 		report("api reachable", err == nil, cfg.APIBaseURL)
+		if cfg.DeviceToken != "" && cfg.DeviceID != "" && cfg.DevicePrivateKey != "" {
+			ad, adErr := client.NextAd(cfg.DeviceID, "codex", "")
+			report("ads-next reachable", adErr == nil, ad.CampaignID)
+			report("click endpoint reachable", client.PathReachable("/events-click") == nil, "events-click")
+		} else {
+			report("ads-next reachable", false, "device not linked")
+			report("click endpoint reachable", false, "device not linked")
+		}
 	}
 
 	report("daemon running", daemonHealthy("127.0.0.1:18181"), "127.0.0.1:18181")
 	report("supported tools detected", len(detected) > 0, detectedSummary(detected))
 	report("shims installed", shimsInstalled(detected), filepath.Join(cfgDirFromConfig(), "shims"))
 	report("shell integration active", shellIntegrationActive(), shellProfilePath())
+	report("latest release reachable", latestReleaseReachable() == nil, "kshgr/sponsorbucks-client")
 
 	if !ok {
 		os.Exit(1)
@@ -426,4 +437,9 @@ func detectedSummary(values map[string]string) string {
 	}
 	sort.Strings(names)
 	return strings.Join(names, ", ")
+}
+
+func latestReleaseReachable() error {
+	_, err := fetchLatestRelease()
+	return err
 }

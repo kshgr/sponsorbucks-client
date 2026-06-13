@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"sponsorbucks-client/internal/ads"
+	"sponsorbucks-client/internal/adstate"
 	"sponsorbucks-client/internal/api"
 	"sponsorbucks-client/internal/buildinfo"
 	"sponsorbucks-client/internal/events"
@@ -29,18 +30,30 @@ type Options struct {
 	Command []string
 	Version string
 	Demo    bool
+	Sticky  StickyMode
 }
 
+type StickyMode string
+
+const (
+	StickyAuto StickyMode = "auto"
+	StickyOn   StickyMode = "on"
+	StickyOff  StickyMode = "off"
+)
+
 type adFrame struct {
-	CampaignID string
-	CreativeID string
-	Line       string
+	CampaignID   string
+	CreativeID   string
+	CreativeHash string
+	Line         string
+	OpenURL      string
+	Visible      bool
 }
 
 var fallbackAds = []adFrame{
-	{CampaignID: "camp_fallback_1", CreativeID: "creative_fallback_1", Line: "Sponsored - SponsorBucks launch partner"},
-	{CampaignID: "camp_fallback_2", CreativeID: "creative_fallback_2", Line: "Sponsored - Keep shipping with SponsorBucks"},
-	{CampaignID: "camp_fallback_3", CreativeID: "creative_fallback_3", Line: "Sponsored - Lightweight support for AI agents"},
+	{CampaignID: "camp_fallback_1", CreativeID: "creative_fallback_1", Line: "Sponsored - SponsorBucks launch partner", Visible: true},
+	{CampaignID: "camp_fallback_2", CreativeID: "creative_fallback_2", Line: "Sponsored - Keep shipping with SponsorBucks", Visible: true},
+	{CampaignID: "camp_fallback_3", CreativeID: "creative_fallback_3", Line: "Sponsored - Lightweight support for AI agents", Visible: true},
 }
 
 func RunAgent(opts Options) (int, error) {
@@ -55,7 +68,15 @@ func RunAgent(opts Options) (int, error) {
 
 	surface := sbtools.CanonicalSurface(opts.Surface)
 	activated := placementEnabled(cfg, surface)
+	if !opts.Demo && cfg.DeviceToken == "" {
+		fmt.Println("Live mode requires login. Run sponsorbucks login or use --demo.")
+		return 1, nil
+	}
+
 	remoteReady := activated && !opts.Demo && cfg.APIBaseURL != "" && cfg.DeviceToken != "" && cfg.DeviceID != "" && cfg.DevicePrivateKey != ""
+	if !opts.Demo && !remoteReady {
+		return 1, fmt.Errorf("live mode requires a linked device and reachable API config")
+	}
 	client := api.New(cfg.APIBaseURL, cfg.DeviceToken)
 	sessionID := idutil.NewUUID()
 
@@ -90,14 +111,18 @@ func RunAgent(opts Options) (int, error) {
 		return waitForExit(ctx, &exited, &exitCode, cmd)
 	}
 
-	sticky := terminalSupportsSticky()
+	sticky := resolveStickyMode(opts.Sticky)
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
-	currentAd := fallbackAd(0)
+	currentAd := adFrame{}
+	noAd := false
 	if remoteReady {
 		if ad, ok := fetchNextAd(client, cfg.DeviceID, surface, ""); ok {
 			currentAd = ad
+		} else {
+			currentAd = noLiveAdFrame()
+			noAd = true
 		}
 		_ = postSigned(client, cfg, "/events-session-start", events.SessionStartEvent{
 			EventType:      "session_start",
@@ -109,9 +134,12 @@ func RunAgent(opts Options) (int, error) {
 			BuildID:        buildinfo.BuildID,
 			BuildChannel:   buildinfo.BuildChannel,
 			HumanInitiated: true,
+			NoAd:           noAd,
 		})
+	} else if opts.Demo {
+		currentAd = fallbackAd(0)
 	}
-	renderAd(sticky, currentAd.Line)
+	renderAd(sticky, currentAd, opts, surface, sessionID, cfg)
 
 	sequence := 0
 	lastCreative := currentAd.CreativeID
@@ -125,18 +153,22 @@ func RunAgent(opts Options) (int, error) {
 				continue
 			}
 			sequence++
-			if remoteReady {
+			if opts.Demo {
+				currentAd = fallbackAd(sequence)
+				lastCreative = currentAd.CreativeID
+			} else if remoteReady {
 				if ad, ok := fetchNextAd(client, cfg.DeviceID, surface, lastCreative); ok {
 					currentAd = ad
 					lastCreative = ad.CreativeID
+					noAd = false
+				} else {
+					currentAd = noLiveAdFrame()
+					noAd = true
 				}
-			} else {
-				currentAd = fallbackAd(sequence)
-				lastCreative = currentAd.CreativeID
 			}
-			renderAd(sticky, currentAd.Line)
+			renderAd(sticky, currentAd, opts, surface, sessionID, cfg)
 
-			if remoteReady {
+			if remoteReady && hasPayableImpression(currentAd) {
 				sig := system.CollectSignals()
 				_ = postSigned(client, cfg, "/events-heartbeat", events.HeartbeatEvent{
 					EventType:                  "heartbeat",
@@ -145,7 +177,7 @@ func RunAgent(opts Options) (int, error) {
 					Surface:                    surface,
 					CampaignID:                 currentAd.CampaignID,
 					CreativeID:                 currentAd.CreativeID,
-					CreativeHash:               ads.CreativeHash(currentAd.Line),
+					CreativeHash:               currentAd.CreativeHash,
 					Sequence:                   sequence,
 					VisibleMS:                  5000,
 					ScreenUnlocked:             sig.ScreenUnlocked,
@@ -204,26 +236,63 @@ func fetchNextAd(client *api.Client, deviceID, surface, lastCreative string) (ad
 	if err != nil || ad.NoAd || ad.Line == "" {
 		return adFrame{}, false
 	}
+	openURL := ad.TrackingURL
+	if openURL == "" {
+		openURL = ad.DestinationURL
+	}
 	return adFrame{
-		CampaignID: ad.CampaignID,
-		CreativeID: ad.CreativeID,
-		Line:       ad.Line,
+		CampaignID:   ad.CampaignID,
+		CreativeID:   ad.CreativeID,
+		CreativeHash: ads.CreativeHash(ad.Line),
+		Line:         ad.Line,
+		OpenURL:      openURL,
+		Visible:      true,
 	}, true
 }
 
 func fallbackAd(sequence int) adFrame {
 	if len(fallbackAds) == 0 {
-		return adFrame{CampaignID: "camp_fallback", CreativeID: "creative_fallback", Line: "Sponsored - SponsorBucks"}
+		return adFrame{CampaignID: "camp_fallback", CreativeID: "creative_fallback", Line: "Sponsored - SponsorBucks", CreativeHash: ads.CreativeHash("Sponsored - SponsorBucks"), Visible: true}
 	}
-	return fallbackAds[sequence%len(fallbackAds)]
+	ad := fallbackAds[sequence%len(fallbackAds)]
+	ad.CreativeHash = ads.CreativeHash(ad.Line)
+	return ad
 }
 
-func renderAd(sticky bool, line string) {
+func noLiveAdFrame() adFrame {
+	line := "Sponsored - no live campaign available"
+	return adFrame{
+		CampaignID:   "",
+		CreativeID:   "",
+		CreativeHash: ads.CreativeHash(line),
+		Line:         line,
+		Visible:      false,
+	}
+}
+
+func renderAd(sticky bool, ad adFrame, opts Options, surface, sessionID string, cfg localconfig.Config) {
+	if err := adstate.Save(adstate.VisibleAd{
+		Visible:       ad.Visible,
+		SessionID:     sessionID,
+		DeviceID:      cfg.DeviceID,
+		Surface:       surface,
+		CampaignID:    ad.CampaignID,
+		CreativeID:    ad.CreativeID,
+		CreativeHash:  ad.CreativeHash,
+		Line:          ad.Line,
+		OpenURL:       ad.OpenURL,
+		ClientVersion: opts.Version,
+		BuildID:       buildinfo.BuildID,
+		BuildChannel:  buildinfo.BuildChannel,
+	}); err != nil {
+		_ = logs.Append("ad_state_save_error", map[string]string{"error": err.Error()})
+	}
+	rendered := overlay.RenderSponsored(ad.Line, ad.OpenURL, "sponsorbucks open")
 	if sticky {
-		fmt.Fprintf(os.Stderr, "\r\033[2K[%s] %s", time.Now().Format("15:04:05"), overlay.SponsoredLine(line))
+		fmt.Fprintf(os.Stderr, "\r\033[2K[%s] %s", time.Now().Format("15:04:05"), rendered)
 		return
 	}
-	fmt.Fprintf(os.Stderr, "\n[%s] %s\n", time.Now().Format("15:04:05"), overlay.SponsoredLine(line))
+	fmt.Fprintf(os.Stderr, "\n[%s] %s\n", time.Now().Format("15:04:05"), rendered)
 }
 
 func postSigned(client *api.Client, cfg localconfig.Config, path string, payload any) error {
@@ -249,6 +318,37 @@ func terminalSupportsSticky() bool {
 	return false
 }
 
+func resolveStickyMode(mode StickyMode) bool {
+	switch mode {
+	case StickyOn:
+		return true
+	case StickyOff:
+		return false
+	default:
+		return terminalSupportsSticky()
+	}
+}
+
 func placementEnabled(cfg localconfig.Config, surface string) bool {
 	return !cfg.Paused && !cfg.DisabledTools[surface]
+}
+
+func hasPayableImpression(ad adFrame) bool {
+	return ad.Visible && ad.CampaignID != "" && ad.CreativeID != ""
+}
+
+func clickEventFromState(state adstate.VisibleAd, now time.Time) events.ClickEvent {
+	return events.ClickEvent{
+		EventType:     "click",
+		SessionID:     state.SessionID,
+		DeviceID:      state.DeviceID,
+		CampaignID:    state.CampaignID,
+		CreativeID:    state.CreativeID,
+		CreativeHash:  state.CreativeHash,
+		Surface:       state.Surface,
+		ClickedAt:     now.UTC().Format(time.RFC3339),
+		ClientVersion: state.ClientVersion,
+		BuildID:       state.BuildID,
+		BuildChannel:  state.BuildChannel,
+	}
 }

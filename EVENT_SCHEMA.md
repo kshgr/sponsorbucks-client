@@ -12,7 +12,8 @@
   "client_version": "0.3.0",
   "build_id": "dev",
   "build_channel": "dev",
-  "human_initiated": true
+  "human_initiated": true,
+  "no_ad": false
 }
 ```
 
@@ -34,6 +35,24 @@
   "foreground_supported_surface": true,
   "placement_visible": true,
   "created_at": "2026-06-13T12:00:05Z",
+  "client_version": "0.3.0",
+  "build_id": "dev",
+  "build_channel": "dev"
+}
+```
+
+## click
+
+```json
+{
+  "event_type": "click",
+  "session_id": "sess_...",
+  "device_id": "dev_...",
+  "campaign_id": "camp_...",
+  "creative_id": "creative_...",
+  "creative_hash": "sha256-of-visible-line",
+  "surface": "codex",
+  "clicked_at": "2026-06-13T12:00:05Z",
   "client_version": "0.3.0",
   "build_id": "dev",
   "build_channel": "dev"
